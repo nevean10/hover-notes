@@ -12,6 +12,7 @@ Each note rests as a small grey tab with no text. Hover over it to expand, type,
 - **Stays open while typing** — collapses when you click away or press `Esc`
 - **Pin** (📌) to keep a note permanently open
 - **All pages or this page** (🌐) — all-pages notes (the default) survive navigation, tab switches, and single-page-app route changes, and stay in sync across open tabs; this-page notes stay on the URL where you made them
+- **One-click copy** (⧉) — copy the whole note straight from the note, e.g. a reusable prompt for Grok or ChatGPT
 - **Auto-saved** as you type
 - **Drag** by the header, **resize** from the corner
 - **Three ways to add:** toolbar button, `Alt+Shift+N`, or right-click → *Add sticky note* (selected text goes into the note)

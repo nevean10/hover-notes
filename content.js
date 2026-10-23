@@ -137,6 +137,11 @@
     const scopeLabel = document.createElement('span');
     scopeLabel.className = 'scope';
 
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'btn';
+    copyBtn.title = 'Copy note text';
+    copyBtn.textContent = '⧉';
+
     const globeBtn = document.createElement('button');
     globeBtn.className = 'btn toggle';
     globeBtn.textContent = '🌐';
@@ -151,7 +156,7 @@
     delBtn.title = 'Delete note';
     delBtn.textContent = '×';
 
-    head.append(scopeLabel, globeBtn, pinBtn, delBtn);
+    head.append(scopeLabel, copyBtn, globeBtn, pinBtn, delBtn);
 
     const showScope = () => {
       scopeLabel.textContent = n.global ? 'ALL PAGES' : 'THIS PAGE';
@@ -236,6 +241,29 @@
       n.updated = Date.now();
       stamp();
       save();
+    });
+
+    // --- Copy (one click, e.g. a reusable prompt for Grok) -------------------
+    copyBtn.addEventListener('click', async () => {
+      const text = ta.value;
+      let ok = false;
+      try {
+        await navigator.clipboard.writeText(text);
+        ok = true;
+      } catch {
+        try {
+          ta.focus();
+          ta.select();
+          ok = document.execCommand('copy');
+          ta.setSelectionRange(text.length, text.length);
+        } catch {}
+      }
+      copyBtn.textContent = ok ? '✓' : '!';
+      copyBtn.title = ok ? 'Copied' : 'Copy failed — select the text and press Ctrl+C';
+      setTimeout(() => {
+        copyBtn.textContent = '⧉';
+        copyBtn.title = 'Copy note text';
+      }, 1200);
     });
 
     // --- Scope toggle (all pages <-> this page) -----------------------------

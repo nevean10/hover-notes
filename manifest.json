@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Sticky Notes",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Pin draggable sticky notes on any web page. Notes rest as a small tab, expand on hover, and can follow you to every page.",
   "permissions": ["storage", "contextMenus", "activeTab", "scripting"],
   "background": {
