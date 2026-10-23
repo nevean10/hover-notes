@@ -11,7 +11,11 @@ Each note rests as a small grey tab with no text. Hover over it to expand, type,
 - **Hover to open** — notes rest as a 34px tab and expand on hover; no clicking
 - **Stays open while typing** — collapses when you click away or press `Esc`
 - **Pin** (📌) to keep a note permanently open
-- **All pages or this page** (🌐) — all-pages notes (the default) survive navigation, tab switches, and single-page-app route changes, and stay in sync across open tabs; this-page notes stay on the URL where you made them
+- **Scope per note** — click the label in the note's header to cycle:
+  - **x.com only** (default) — every page of the site you made it on, nowhere else; survives navigation like opening a reply
+  - **This page** — only the exact URL
+  - **All sites** — follows you to every website
+- Notes stay in sync across open tabs
 - **One-click copy** (⧉) — copy the whole note straight from the note, e.g. a reusable prompt for Grok or ChatGPT
 - **Auto-saved** as you type
 - **Drag** by the header, **resize** from the corner

@@ -73,7 +73,8 @@ function draw() {
     text.textContent = n.text?.trim() ? n.text.slice(0, 200) : '(empty note)';
     const meta = document.createElement('div');
     meta.className = 'meta';
-    meta.textContent = `${p.global ? '🌐 All pages' : p.title || p.url} · ${new Date(n.updated).toLocaleDateString()}`;
+    const where = p.global ? '🌐 All sites' : p.site ? `📍 ${p.title} only` : p.title || p.url;
+    meta.textContent = `${where} · ${new Date(n.updated).toLocaleDateString()}`;
     body.append(text, meta);
     if (p.global) {
       body.title = 'Click to copy';

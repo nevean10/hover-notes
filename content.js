@@ -1,12 +1,12 @@
-// Hover Notes — content script
+// Sticky Notes — content script
 // Notes render inside a Shadow DOM so page CSS can't break them (and vice versa).
 // Behaviour: each note rests as a small text-free grey tab, expands on hover,
 // stays open while you type, and collapses when you move away.
 //
-// Two scopes:
-//   - All pages (default): one note that follows you to every site and every
-//     page change — e.g. a scratchpad you copy/paste from.
-//   - This page only: stays on the page (origin + path) where it was created.
+// Scope: every note lives in one of three buckets —
+//   site : every page on this website only, e.g. all of x.com (default)
+//   page : this exact URL path only
+//   all  : every website
 
 (() => {
   if (window.__stickyNotesExt) return;
@@ -14,7 +14,11 @@
 
   const TAB = 34;          // collapsed tab size (px)
   const CLOSE_DELAY = 350; // ms after mouse leaves before collapsing
-  const GKEY = 'notes:__global__';
+  const SCOPES = ['page', 'site', 'all'];
+  // Click the scope label to cycle: All sites -> This site -> This page -> All sites
+  const NEXT_SCOPE = { all: 'site', site: 'page', page: 'all' };
+  const DEFAULT_SCOPE = 'site'; // new notes stay on the website you made them on
+  const GKEY = 'notes:__global__'; // kept from v1.2 so existing all-sites notes survive
 
   const CSS = `
     :host { all: initial; }
@@ -36,7 +40,7 @@
     .note.open > .tab { display: none; }
     /* Expanded state */
     .note.open {
-      resize: both; min-width: 180px; min-height: 120px;
+      resize: both; min-width: 200px; min-height: 120px;
       transform-origin: top left; animation: pop .14s ease-out;
     }
     @keyframes pop { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: none; } }
@@ -44,18 +48,25 @@
     .tab i { display: block; width: 14px; height: 2px; border-radius: 1px; background: rgba(255,255,255,.8); }
     .tab i:last-child { width: 9px; margin-right: 5px; }
     .head {
-      display: flex; align-items: center; gap: 4px; padding: 5px 6px 5px 10px;
+      display: flex; align-items: center; gap: 4px; padding: 5px 6px 5px 8px;
       background: rgba(0,0,0,.2); cursor: grab; user-select: none; flex: 0 0 auto;
     }
     .head:active { cursor: grabbing; }
-    .scope { flex: 1; font-size: 10px; letter-spacing: .3px; opacity: .6; white-space: nowrap; }
+    .grip { flex: 1; height: 14px; }
+    .scope {
+      all: unset; cursor: pointer; font-size: 10px; font-weight: 700; letter-spacing: .05em;
+      text-transform: uppercase; padding: 2px 8px; border-radius: 9px; color: #f1f3f5;
+      background: rgba(255,255,255,.14);
+    }
+    .scope:hover { background: rgba(255,255,255,.24); }
+    .scope.wide { background: rgba(120,190,255,.35); }
     .btn {
       all: unset; width: 22px; height: 22px; line-height: 22px; text-align: center;
       border-radius: 5px; cursor: pointer; font-size: 14px; color: #e9ecef;
     }
     .btn:hover { background: rgba(255,255,255,.16); }
-    .toggle { opacity: .4; font-size: 12px; }
-    .toggle.on { opacity: 1; background: rgba(255,255,255,.18); }
+    .pin { opacity: .4; font-size: 12px; }
+    .pin.on { opacity: 1; background: rgba(255,255,255,.18); }
     textarea {
       all: unset; flex: 1; box-sizing: border-box; width: 100%; padding: 8px 10px;
       white-space: pre-wrap; overflow: auto; font: inherit; color: inherit; caret-color: #fff;
@@ -65,11 +76,20 @@
     .foot { font-size: 10px; opacity: .55; padding: 0 10px 5px; text-align: right; flex: 0 0 auto; }
   `;
 
-  let key = pageKey();
-  let pageNotes = [];
-  let globalNotes = [];
-  const lastWritten = {}; // storage key -> JSON last written/seen by this tab
-  let saveTimer = null;
+  function keyFor(scope) {
+    if (scope === 'page') return 'notes:' + location.origin + location.pathname;
+    if (scope === 'site') return 'notes:site:' + location.origin;
+    return GKEY;
+  }
+
+  const siteName = () => location.host.replace(/^www\./, '');
+
+  // One bucket per scope: { key, url, notes, lastWritten, timer }
+  const buckets = {};
+  for (const s of SCOPES) {
+    buckets[s] = { key: keyFor(s), url: location.href, notes: [], lastWritten: '', timer: null };
+  }
+
   let zTop = 1;
 
   const host = document.createElement('div');
@@ -81,45 +101,58 @@
   style.textContent = CSS;
   root.appendChild(style);
 
-  function pageKey() {
-    return 'notes:' + location.origin + location.pathname;
-  }
-
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-  const listFor = (n) => (n.global ? globalNotes : pageNotes);
 
   function ensureHost() {
     if (!host.isConnected) document.documentElement.appendChild(host);
   }
 
-  // Write only the storage keys whose contents actually changed, so a tab with
-  // a stale copy never overwrites newer notes saved from another tab.
-  function writeKey(k, arr, meta) {
-    const s = JSON.stringify(arr);
-    if (s === lastWritten[k]) return;
-    lastWritten[k] = s;
-    if (arr.length) chrome.storage.local.set({ [k]: { ...meta, notes: arr } });
-    else chrome.storage.local.remove(k);
+  // --- Storage --------------------------------------------------------------
+  function recordMeta(scope, b) {
+    if (scope === 'page') return { url: b.url, title: document.title };
+    if (scope === 'site') return { url: location.origin + '/', title: siteName(), site: true };
+    return { url: '', title: 'All sites', global: true };
   }
 
-  function save() {
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      try {
-        writeKey(key, pageNotes, { url: location.href, title: document.title });
-        writeKey(GKEY, globalNotes, { url: '', title: 'All pages', global: true });
-      } catch {
-        // Extension was reloaded/updated; this old script can no longer save.
+  // Write only when this bucket actually changed, so a tab holding a stale copy
+  // never overwrites newer notes saved from another tab.
+  function write(scope) {
+    const b = buckets[scope];
+    clearTimeout(b.timer);
+    b.timer = null;
+    const s = JSON.stringify(b.notes);
+    if (s === b.lastWritten) return;
+    try {
+      if (b.notes.length) {
+        b.lastWritten = s;
+        chrome.storage.local.set({ [b.key]: { ...recordMeta(scope, b), notes: b.notes } });
+      } else {
+        b.lastWritten = '[]';
+        chrome.storage.local.remove(b.key);
       }
-    }, 250);
+    } catch {
+      // Extension was reloaded/updated; this old script can no longer save.
+    }
   }
 
-  function buildNote(n, startOpen = false) {
+  function save(scope) {
+    const b = buckets[scope];
+    clearTimeout(b.timer);
+    b.timer = setTimeout(() => write(scope), 250);
+  }
+
+  function flush(scope) {
+    if (buckets[scope].timer) write(scope);
+  }
+
+  // --- Note UI --------------------------------------------------------------
+  function buildNote(n, initialScope, startOpen = false) {
+    let scope = initialScope;
     const el = document.createElement('div');
     el.className = 'note closed';
-    el.dataset.scope = n.global ? 'global' : 'page';
     el.style.zIndex = ++zTop;
+    el._scope = scope;
 
     let dragging = false;
     let closeTimer = null;
@@ -133,22 +166,20 @@
     // Header
     const head = document.createElement('div');
     head.className = 'head';
+    const grip = document.createElement('div');
+    grip.className = 'grip';
 
-    const scopeLabel = document.createElement('span');
-    scopeLabel.className = 'scope';
+    const scopeBtn = document.createElement('button');
+    scopeBtn.className = 'scope';
 
     const copyBtn = document.createElement('button');
     copyBtn.className = 'btn';
     copyBtn.title = 'Copy note text';
     copyBtn.textContent = '⧉';
 
-    const globeBtn = document.createElement('button');
-    globeBtn.className = 'btn toggle';
-    globeBtn.textContent = '🌐';
-
     const pinBtn = document.createElement('button');
-    pinBtn.className = 'btn toggle' + (n.pinned ? ' on' : '');
-    pinBtn.title = 'Keep open';
+    pinBtn.className = 'btn pin' + (n.pinned ? ' on' : '');
+    pinBtn.title = n.pinned ? 'Unpin (auto-hide)' : 'Keep open';
     pinBtn.textContent = '📌';
 
     const delBtn = document.createElement('button');
@@ -156,16 +187,7 @@
     delBtn.title = 'Delete note';
     delBtn.textContent = '×';
 
-    head.append(scopeLabel, copyBtn, globeBtn, pinBtn, delBtn);
-
-    const showScope = () => {
-      scopeLabel.textContent = n.global ? 'ALL PAGES' : 'THIS PAGE';
-      globeBtn.classList.toggle('on', !!n.global);
-      globeBtn.title = n.global
-        ? 'Showing on all pages — click to keep on this page only'
-        : 'Showing on this page only — click to show on all pages';
-    };
-    showScope();
+    head.append(grip, scopeBtn, copyBtn, pinBtn, delBtn);
 
     // Body
     const ta = document.createElement('textarea');
@@ -180,7 +202,54 @@
 
     el.append(tab, head, ta, foot);
 
-    // --- Open / close -------------------------------------------------------
+    // --- Scope ---------------------------------------------------------------
+    function paintScope() {
+      scopeBtn.textContent = { page: 'This page', site: siteName() + ' only', all: 'All sites' }[scope];
+      scopeBtn.classList.toggle('wide', scope === 'all');
+      scopeBtn.title = {
+        all: 'Shown on every website. Click: only on ' + siteName(),
+        site: 'Shown on every page of ' + siteName() + ' only. Click: this page only',
+        page: 'Shown on this page only. Click: every website'
+      }[scope];
+    }
+    paintScope();
+
+    scopeBtn.addEventListener('click', () => {
+      const from = scope;
+      const to = NEXT_SCOPE[from];
+      buckets[from].notes = buckets[from].notes.filter((x) => x.id !== n.id);
+      buckets[to].notes.push(n);
+      scope = to;
+      el._scope = to;
+      paintScope();
+      save(from);
+      save(to);
+    });
+
+    // --- Copy ----------------------------------------------------------------
+    copyBtn.addEventListener('click', async () => {
+      const text = ta.value;
+      let ok = false;
+      try {
+        await navigator.clipboard.writeText(text);
+        ok = true;
+      } catch {
+        try {
+          ta.focus();
+          ta.select();
+          ok = document.execCommand('copy');
+          ta.setSelectionRange(text.length, text.length);
+        } catch {}
+      }
+      copyBtn.textContent = ok ? '✓' : '!';
+      copyBtn.title = ok ? 'Copied' : 'Copy failed — select the text and press Ctrl+C';
+      setTimeout(() => {
+        copyBtn.textContent = '⧉';
+        copyBtn.title = 'Copy note text';
+      }, 1200);
+    });
+
+    // --- Open / close --------------------------------------------------------
     const isOpen = () => el.classList.contains('open');
 
     function placeClosed() {
@@ -223,8 +292,8 @@
       ta.focus();
     });
 
-    // --- Typing -------------------------------------------------------------
-    // Block page keyboard shortcuts (YouTube, Gmail, X, Grok, etc.) while typing.
+    // --- Typing --------------------------------------------------------------
+    // Block page keyboard shortcuts (YouTube, Gmail, X, etc.) while typing.
     ['keydown', 'keyup', 'keypress'].forEach((t) =>
       ta.addEventListener(t, (e) => e.stopPropagation())
     );
@@ -240,66 +309,30 @@
       n.text = ta.value;
       n.updated = Date.now();
       stamp();
-      save();
+      save(scope);
     });
 
-    // --- Copy (one click, e.g. a reusable prompt for Grok) -------------------
-    copyBtn.addEventListener('click', async () => {
-      const text = ta.value;
-      let ok = false;
-      try {
-        await navigator.clipboard.writeText(text);
-        ok = true;
-      } catch {
-        try {
-          ta.focus();
-          ta.select();
-          ok = document.execCommand('copy');
-          ta.setSelectionRange(text.length, text.length);
-        } catch {}
-      }
-      copyBtn.textContent = ok ? '✓' : '!';
-      copyBtn.title = ok ? 'Copied' : 'Copy failed — select the text and press Ctrl+C';
-      setTimeout(() => {
-        copyBtn.textContent = '⧉';
-        copyBtn.title = 'Copy note text';
-      }, 1200);
-    });
-
-    // --- Scope toggle (all pages <-> this page) -----------------------------
-    globeBtn.addEventListener('click', () => {
-      const from = listFor(n);
-      from.splice(from.indexOf(n), 1);
-      n.global = !n.global;
-      listFor(n).push(n);
-      el.dataset.scope = n.global ? 'global' : 'page';
-      showScope();
-      save();
-    });
-
-    // --- Pin ----------------------------------------------------------------
+    // --- Pin -----------------------------------------------------------------
     pinBtn.addEventListener('click', () => {
       n.pinned = !n.pinned;
       pinBtn.classList.toggle('on', n.pinned);
       pinBtn.title = n.pinned ? 'Unpin (auto-hide)' : 'Keep open';
-      save();
+      save(scope);
     });
 
-    // --- Delete -------------------------------------------------------------
+    // --- Delete --------------------------------------------------------------
     delBtn.addEventListener('click', () => {
       if (n.text.trim() && !confirm('Delete this sticky note?')) return;
-      const list = listFor(n);
-      const i = list.indexOf(n);
-      if (i > -1) list.splice(i, 1);
+      buckets[scope].notes = buckets[scope].notes.filter((x) => x.id !== n.id);
       if (el._ro) el._ro.disconnect();
       el.remove();
-      save();
+      save(scope);
     });
 
     // Bring to front
     el.addEventListener('pointerdown', () => (el.style.zIndex = ++zTop));
 
-    // --- Drag by header -----------------------------------------------------
+    // --- Drag by header ------------------------------------------------------
     head.addEventListener('pointerdown', (e) => {
       if (e.target.closest('button')) return;
       e.preventDefault();
@@ -317,14 +350,14 @@
         dragging = false;
         n.x = el.offsetLeft;
         n.y = el.offsetTop;
-        save();
+        save(scope);
         if (!el.matches(':hover')) scheduleClose();
       };
       head.addEventListener('pointermove', move);
       head.addEventListener('pointerup', up);
     });
 
-    // --- Persist resize (only while expanded) -------------------------------
+    // --- Persist resize (only while expanded) --------------------------------
     el._ro = new ResizeObserver(() => {
       if (!isOpen()) return;
       const w = el.offsetWidth;
@@ -332,7 +365,7 @@
       if (w > TAB && h > TAB && (w !== n.w || h !== n.h)) {
         n.w = w;
         n.h = h;
-        save();
+        save(scope);
       }
     });
     el._ro.observe(el);
@@ -344,87 +377,63 @@
     return el;
   }
 
-  // Re-render one scope only, so a page change never disturbs a global note
-  // you're typing in.
+  // Re-draw only the notes of one scope, leaving the others untouched
+  // (so a Site/All note you're typing in survives page navigation).
   function render(scope) {
-    // Removing sibling notes can make Chrome drop focus from a note you're
-    // typing in — remember it and restore it afterwards.
-    const active = root.activeElement;
-    const sel = active?.tagName === 'TEXTAREA' ? [active.selectionStart, active.selectionEnd] : null;
-
-    root.querySelectorAll(`.note[data-scope="${scope}"]`).forEach((el) => {
+    root.querySelectorAll('.note').forEach((el) => {
+      if (el._scope !== scope) return;
       if (el._ro) el._ro.disconnect();
       el.remove();
     });
-    const list = scope === 'global' ? globalNotes : pageNotes;
+    const list = buckets[scope].notes;
     if (list.length) ensureHost();
-    list.forEach((n) => root.appendChild(buildNote(n)));
-
-    if (!active?.isConnected) return;
-    const restore = () => {
-      if (active.isConnected && root.activeElement !== active) {
-        active.focus({ preventScroll: true });
-        if (sel) active.setSelectionRange(sel[0], sel[1]);
-      }
-    };
-    restore();
-    // Chrome's focus fix-up runs after the DOM change, so check again shortly.
-    requestAnimationFrame(restore);
-    setTimeout(restore, 50);
+    list.forEach((n) => root.appendChild(buildNote(n, scope)));
   }
 
   function addNote(text = '') {
-    const offset = ((pageNotes.length + globalNotes.length) % 6) * 24;
+    const b = buckets[DEFAULT_SCOPE];
+    const offset = (root.querySelectorAll('.note').length % 6) * 24;
     const n = {
       id: uid(),
       text,
       x: Math.max(10, innerWidth - 280 - offset),
       y: 80 + offset,
       w: 260,
-      h: 220,
+      h: 210,
       pinned: false,
-      global: true, // default: follows you to every page
       created: Date.now(),
       updated: Date.now()
     };
-    globalNotes.push(n);
+    b.notes.push(n);
     ensureHost();
-    const el = buildNote(n, true);
+    const el = buildNote(n, DEFAULT_SCOPE, true);
     root.appendChild(el);
     el._ta.focus();
-    save();
+    save(DEFAULT_SCOPE);
   }
 
-  function loadPage() {
-    const k = key;
-    chrome.storage.local.get(k).then((r) => {
-      if (k !== key) return; // URL changed again while loading
-      pageNotes = (r[k]?.notes || []).map((n) => ({ ...n, global: false }));
-      lastWritten[k] = JSON.stringify(r[k]?.notes || []);
-      render('page');
+  function load(scope) {
+    const b = buckets[scope];
+    const key = b.key;
+    chrome.storage.local.get(key).then((r) => {
+      if (b.key !== key) return; // navigated away while loading
+      b.notes = r[key]?.notes || [];
+      b.lastWritten = JSON.stringify(b.notes);
+      render(scope);
     });
   }
 
-  function loadGlobal() {
-    chrome.storage.local.get(GKEY).then((r) => {
-      globalNotes = (r[GKEY]?.notes || []).map((n) => ({ ...n, global: true }));
-      lastWritten[GKEY] = JSON.stringify(r[GKEY]?.notes || []);
-      render('global');
-    });
-  }
-
-  // Sync changes made elsewhere: popup, or another tab (keeps the global note
-  // identical in every open tab).
+  // Sync changes made elsewhere (popup deletes, other tabs, scope moves).
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
-    for (const [k, scope] of [[key, 'page'], [GKEY, 'global']]) {
-      if (!changes[k]) continue;
-      const incoming = changes[k].newValue?.notes || [];
+    for (const scope of SCOPES) {
+      const b = buckets[scope];
+      if (!changes[b.key]) continue;
+      const incoming = changes[b.key].newValue?.notes || [];
       const s = JSON.stringify(incoming);
-      if (s === lastWritten[k]) continue; // our own write
-      lastWritten[k] = s;
-      if (scope === 'global') globalNotes = incoming.map((n) => ({ ...n, global: true }));
-      else pageNotes = incoming.map((n) => ({ ...n, global: false }));
+      if (s === b.lastWritten) continue; // our own write
+      b.notes = incoming;
+      b.lastWritten = s;
       render(scope);
     }
   });
@@ -436,16 +445,19 @@
     }
   });
 
-  // Single-page apps (Grok, X, Gmail…) change the URL without reloading.
-  // Only page-scoped notes are swapped; global notes stay put.
+  // Single-page apps (X, Gmail, etc.) change the URL without reloading.
+  // Only page-scoped notes swap; Site/All notes stay put.
   setInterval(() => {
-    const k = pageKey();
-    if (k !== key) {
-      key = k;
-      loadPage();
+    const b = buckets.page;
+    const k = keyFor('page');
+    if (k !== b.key) {
+      flush('page');
+      b.key = k;
+      b.url = location.href;
+      b.notes = [];
+      load('page');
     }
-  }, 700);
+  }, 500);
 
-  loadGlobal();
-  loadPage();
+  SCOPES.forEach(load);
 })();
