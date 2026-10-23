@@ -1,0 +1,36 @@
+* { box-sizing: border-box; }
+body {
+  width: 340px; margin: 0; padding: 12px;
+  font: 13px/1.4 -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  color: #1f1f1f; background: #fafafa;
+}
+header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+h1 { font-size: 16px; margin: 0; }
+button { font: inherit; cursor: pointer; }
+.primary {
+  width: 100%; padding: 9px; border: 0; border-radius: 6px;
+  background: linear-gradient(150deg, #8b9099, #393d44); color: #fff; font-weight: 700;
+}
+.primary:hover { background: linear-gradient(150deg, #9aa0a9, #2c2f35); }
+.ghost { border: 1px solid #ccc; background: #fff; border-radius: 5px; padding: 3px 8px; font-size: 12px; }
+.ghost:hover { background: #eee; }
+.msg { margin: 8px 0 0; padding: 6px 8px; border-radius: 5px; background: #ffebee; color: #b71c1c; font-size: 12px; }
+input[type=search] {
+  width: 100%; margin: 10px 0 8px; padding: 7px 9px;
+  border: 1px solid #ccc; border-radius: 6px; font: inherit; background: #fff;
+}
+#list { max-height: 360px; overflow-y: auto; }
+.item {
+  display: flex; gap: 8px; align-items: stretch; margin-bottom: 6px;
+  background: #fff; border: 1px solid #e3e3e3; border-radius: 6px; overflow: hidden;
+}
+.stripe { width: 6px; flex: 0 0 6px; }
+.body { flex: 1; min-width: 0; padding: 6px 0; cursor: pointer; }
+.body:hover .text { text-decoration: underline; }
+.text { white-space: pre-wrap; word-break: break-word; max-height: 3.9em; overflow: hidden; }
+.text.empty { color: #999; font-style: italic; }
+.meta { font-size: 11px; color: #777; margin-top: 3px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.del { border: 0; background: none; color: #999; font-size: 18px; padding: 0 10px; }
+.del:hover { color: #c62828; }
+.empty-state { text-align: center; color: #888; padding: 20px 0; }
+footer { display: flex; justify-content: space-between; font-size: 11px; color: #888; margin-top: 8px; }

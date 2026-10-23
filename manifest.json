@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "Sticky Notes",
+  "version": "1.1.0",
+  "description": "Pin draggable sticky notes on any web page. Notes rest as a small tab, expand on hover, and are saved per page.",
+  "permissions": ["storage", "contextMenus", "activeTab", "scripting"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Sticky Notes",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "commands": {
+    "new-note": {
+      "suggested_key": { "default": "Alt+Shift+N", "mac": "Alt+Shift+N" },
+      "description": "Add a sticky note to the current page"
+    }
+  }
+}
