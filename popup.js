@@ -46,13 +46,14 @@ function draw() {
       rows.push({ p, n });
     }
   }
-  rows.sort((a, b) => (b.n.updated || 0) - (a.n.updated || 0));
+  // Global notes first, then newest page notes.
+  rows.sort((a, b) => (!!b.p.global - !!a.p.global) || (b.n.updated || 0) - (a.n.updated || 0));
 
   list.replaceChildren();
   if (!rows.length) {
     const e = document.createElement('div');
     e.className = 'empty-state';
-    e.textContent = q ? 'No notes match your search.' : 'No notes yet. Add one to this page above.';
+    e.textContent = q ? 'No notes match your search.' : 'No notes yet. Add one above.';
     list.appendChild(e);
   }
 
@@ -72,9 +73,14 @@ function draw() {
     text.textContent = n.text?.trim() ? n.text.slice(0, 200) : '(empty note)';
     const meta = document.createElement('div');
     meta.className = 'meta';
-    meta.textContent = `${p.title || p.url} · ${new Date(n.updated).toLocaleDateString()}`;
+    meta.textContent = `${p.global ? '🌐 All pages' : p.title || p.url} · ${new Date(n.updated).toLocaleDateString()}`;
     body.append(text, meta);
-    body.addEventListener('click', () => chrome.tabs.create({ url: p.url }));
+    if (p.global) {
+      body.title = 'Click to copy';
+      body.addEventListener('click', () => navigator.clipboard.writeText(n.text || ''));
+    } else {
+      body.addEventListener('click', () => chrome.tabs.create({ url: p.url }));
+    }
 
     const del = document.createElement('button');
     del.className = 'del';

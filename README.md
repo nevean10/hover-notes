@@ -2,7 +2,7 @@
 
 A lightweight Chrome extension for sticky notes that live on the page and stay out of the way.
 
-Each note rests as a small grey tab with no text. Hover over it to expand, type, and move away — it collapses back. Notes are saved per page and reappear when you return.
+Each note rests as a small grey tab with no text. Hover over it to expand, type, and move away — it collapses back. By default a note follows you to every page, so it works as a scratchpad you can copy/paste from anywhere (e.g. drafting text before pasting it into a chat app). Switch any note to "this page only" with one click.
 
 ![Resting tab vs. expanded on hover](docs/preview.png)
 
@@ -11,7 +11,8 @@ Each note rests as a small grey tab with no text. Hover over it to expand, type,
 - **Hover to open** — notes rest as a 34px tab and expand on hover; no clicking
 - **Stays open while typing** — collapses when you click away or press `Esc`
 - **Pin** (📌) to keep a note permanently open
-- **Per-page notes** — tied to the page URL, auto-saved as you type
+- **All pages or this page** (🌐) — all-pages notes (the default) survive navigation, tab switches, and single-page-app route changes, and stay in sync across open tabs; this-page notes stay on the URL where you made them
+- **Auto-saved** as you type
 - **Drag** by the header, **resize** from the corner
 - **Three ways to add:** toolbar button, `Alt+Shift+N`, or right-click → *Add sticky note* (selected text goes into the note)
 - **Popup dashboard** — search every note across all pages, jump to its page, delete, or export a JSON backup
@@ -33,7 +34,7 @@ Replace the files in the **same folder**, then click ↻ on the extension card a
 ## Limitations
 
 - Notes are stored locally (`chrome.storage.local`) in one Chrome profile; they don't sync across devices.
-- Notes match on origin + path; query strings (`?…`) are ignored.
+- This-page notes match on origin + path; query strings (`?…`) are ignored.
 - Chrome doesn't allow extensions on `chrome://` pages, the Chrome Web Store, the new tab page, or the built-in PDF viewer.
 
 ## Files
